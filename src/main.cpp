@@ -1,180 +1,108 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include "WiFiCredentials.h"
-#include "I2SMEMSSampler.h"
-#include "ADCSampler.h"
-#include <driver/dac.h>
+#define USE_HELIX 
 
-WiFiClient *wifiClientADC = NULL;
-HTTPClient *httpClientADC = NULL;
-WiFiClient *wifiClientI2S = NULL;
-HTTPClient *httpClientI2S = NULL;
-ADCSampler *adcSampler = NULL;
-I2SSampler *i2sSampler = NULL;
+#include "AudioTools.h"
+#include "AudioLibs/AudioKit.h"
+#include "Arduino.h"
 
-// replace this with your machines IP Address
-#define ADC_SERVER_URL "http://192.168.1.72:5003/adc_samples"
-#define I2S_SERVER_URL "http://192.168.1.72:5003/i2s_samples"
+const char *urls[] = {
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-13.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-14.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-15.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3"
+};
 
-// i2s config for using the internal ADC
-i2s_config_t adcI2SConfig = {
-    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
-    .sample_rate = 16000,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-    .communication_format = I2S_COMM_FORMAT_I2S_LSB,
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 4,
-    .dma_buf_len = 1024,
-    .use_apll = false,
-    .tx_desc_auto_clear = false,
-    .fixed_mclk = 0};
 
-// i2s config for reading from left channel of I2S
-i2s_config_t i2sMemsConfigLeftChannel = {
-    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-    .sample_rate = 16000,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-    .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S),
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 4,
-    .dma_buf_len = 1024,
-    .use_apll = false,
-    .tx_desc_auto_clear = false,
-    .fixed_mclk = 0};
+#define WIFI HOME
 
-// i2s pins
-i2s_pin_config_t i2sPins = {
-    .bck_io_num = GPIO_NUM_32,
-    .ws_io_num = GPIO_NUM_25,
-    .data_out_num = I2S_PIN_NO_CHANGE,
-    .data_in_num = GPIO_NUM_33};
+#if WIFI == HOME
+const char* ssid = "NetFrame";
+const char* password = "87934hzft9oeu4389nv8o437893hf978";
+#elif WIFI == PSM
+const char* ssid = "NetFrame";
+const char* password = "87934hzft9oeu4389nv8o437893hf978";
+#endif
 
-// how many samples to read at once
-const int SAMPLE_SIZE = 16384;
+ICYStream urlStream(ssid, password);
+AudioSourceURL source(urlStream, urls, "audio/mp3");
+AudioEncoderServer server(new WAVEncoder(), ssid, password);
+AudioKitStream kit;
+MP3DecoderHelix decoder;
+AudioPlayer player(source, kit, decoder);
 
-// send data to a remote address
-void sendData(WiFiClient *wifiClient, HTTPClient *httpClient, const char *url, uint8_t *bytes, size_t count)
-{
-  // send them off to the server
-  digitalWrite(2, HIGH);
-  httpClient->begin(*wifiClient, url);
-  httpClient->addHeader("content-type", "application/octet-stream");
-  httpClient->POST(bytes, count);
-  httpClient->end();
-  digitalWrite(2, LOW);
+bool playState = true;
+bool mode = true;
+
+void next(bool, int, void*) {
+  if(!mode)
+    player.next();
+  Serial.println("next");
 }
 
-int16_t *samples = (int16_t *)malloc(sizeof(uint16_t) * SAMPLE_SIZE);
-
-void adcReadTask(void *parm) {
-  for(;;) {
-
-  }
+void previous(bool, int, void*) {
+  if(!mode)
+    player.previous();
+  Serial.println("pevious");
 }
 
-// Task to write samples from ADC to our server
-void adcWriterTask(void *param)
-{
-  I2SSampler *sampler = (I2SSampler *)param;
-  if (!samples)
-  {
-    Serial.println("Failed to allocate memory for samples");
-    return;
-  }
-  while (true)
-  {
-    unsigned long start = millis();
-    int samples_read = sampler->read(samples, SAMPLE_SIZE);
-    Serial.println(millis()-start);
-    start = millis();
-    unsigned long time = 0;
-    int last;
-    while(time<800) {
-      time = millis()-start;
-      if(time*samples_read/800!=last) {
-        // Serial.println(last);
-        dac_output_voltage(DAC_CHANNEL_1, map(samples[time*samples_read/800], 15000, 30720, 0, 50));
-        last = time*samples_read/800;
-      }
-    }
-    // for(int i = 0; i < samples_read; i++) {
-    //   // Serial.println(map(samples[i], 15000, 30720, 0, 255));
-    //   dac_output_voltage(DAC_CHANNEL_1, map(samples[i], 15000, 30720, 0, 50));
-    //   delay(16);
-    // }
-    // sendData(wifiClientADC, httpClientADC, ADC_SERVER_URL, (uint8_t *)samples, samples_read * sizeof(uint16_t));
-  }
+void changeMode(bool, int, void*) {
+   mode = !mode;
+   if(mode) {
+      player.stop();
+   } else {
+      player.play();
+   }
+   Serial.println("Mode changed to "+String(mode?"send":"receive"));
 }
 
-// Task to write samples to our server
-void i2sMemsWriterTask(void *param)
-{
-  I2SSampler *sampler = (I2SSampler *)param;
-  int16_t *samples = (int16_t *)malloc(sizeof(uint16_t) * SAMPLE_SIZE);
-  if (!samples)
-  {
-    Serial.println("Failed to allocate memory for samples");
-    return;
-  }
-  while (true)
-  {
-    int samples_read = sampler->read(samples, SAMPLE_SIZE);
-    Serial.println(samples_read);
-    // sendData(wifiClientI2S, httpClientI2S, I2S_SERVER_URL, (uint8_t *)samples, samples_read * sizeof(uint16_t));
-  }
-}
 
-void setup()
-{
+void setup(){
   Serial.begin(115200);
-  // launch WiFi
-  // Serial.printf("Connecting to WiFi");
-  // WiFi.mode(WIFI_STA);
-  // WiFi.begin(SSID, PASSWORD);
-  // while (WiFi.waitForConnectResult() != WL_CONNECTED)
-  // {
-  //   Serial.print(".");
-  //   delay(1000);
-  // }
-  // Serial.println("");
-  // Serial.println("WiFi Connected");
-  // Serial.println("Started up");
-  // indicator LED
-  dac_output_enable(DAC_CHANNEL_1);
-  pinMode(2, OUTPUT);
-  // setup the HTTP Client
-  // wifiClientADC = new WiFiClient();
-  // httpClientADC = new HTTPClient();
+  AudioLogger::instance().begin(Serial, AudioLogger::Warning);
+  Serial.println("Serial started");
 
-  // wifiClientI2S = new WiFiClient();
-  // httpClientI2S = new HTTPClient();
+  Serial.println("starting AudioKit...");
+  auto config = kit.defaultConfig(RXTX_MODE);
+  config.input_device = AUDIO_HAL_ADC_INPUT_LINE2;
+  // config.bits_per_sample = 32;
+  // config.sample_rate = 48000;
+  config.default_actions_active = false;
+  config.sd_active = false;
+  kit.begin(config);
+  Serial.println("AudioKit started");
 
-  // input from analog microphones such as the MAX9814 or MAX4466
-  // internal analog to digital converter sampling using i2s
-  // create our samplers
-  // adcSampler = new ADCSampler(ADC_UNIT_1, ADC1_CHANNEL_7, adcI2SConfig);
-  // adcSampler->start();
-  // // set up the adc sample writer task
-  // TaskHandle_t adcWriterTaskHandle;
-  // xTaskCreatePinnedToCore(adcWriterTask, "ADC Writer Task", 4096, adcSampler, 1, &adcWriterTaskHandle, 1);
+  player.setVolume(1.);
+  player.begin();
+  player.stop();
+  server.begin(kit, config);
 
-  // Direct i2s input from INMP441 or the SPH0645
-  // i2sSampler = new I2SMEMSSampler(I2S_NUM_0, i2sPins, i2sMemsConfigLeftChannel, false);
-  // i2sSampler->start();
-  // set up the i2s sample writer task
-  // TaskHandle_t i2sMemsWriterTaskHandle;
-  // xTaskCreatePinnedToCore(i2sMemsWriterTask, "I2S Writer Task", 4096, i2sSampler, 1, &i2sMemsWriterTaskHandle, 1);
+  kit.addAction(PIN_KEY4, next);
+  kit.addAction(PIN_KEY3, previous);
+  kit.addAction(PIN_KEY2, changeMode);
 
-  // // start sampling from i2s device
+  auto down = [](bool,int,void*) { if(!mode) AudioKitStream::actionVolumeDown(true, -1, nullptr); Serial.println("Volume down"); };
+  kit.addAction(PIN_KEY5, down);
+  auto up = [](bool,int,void*) { if(!mode) AudioKitStream::actionVolumeUp(true, -1, nullptr ); Serial.println("Volume up"); };
+  kit.addAction(PIN_KEY6, up);
+  auto play = [](bool,int,void*) { AudioKitStream::actionStartStop(true, -1, nullptr ); playState=!playState; Serial.println(playState?"Continue playing" : "Stop playing"); };
+  kit.addAction(PIN_KEY1, play);
 }
 
-void loop()
-{
-  int value = analogRead(35)/16;
-  dac_output_voltage(DAC_CHANNEL_1, value);
-  Serial.println(value);
-  // nothing to do here - everything is taken care of by tasks
+void loop() {
+  if(mode)
+    server.doLoop();
+  else
+    player.copy();
+  kit.processActions();
 }
