@@ -78,7 +78,7 @@ class StreamCopyT {
             return from;
         }
 
-        Stream *getTo() {
+        Print *getTo() {
             return to;
         }
 
@@ -118,7 +118,7 @@ class StreamCopyT {
                 // callback with unconverted data
                 if (onWrite!=nullptr) onWrite(onWriteObj, buffer, result);
                 #ifndef COPY_LOG_OFF
-                LOGI("StreamCopy::copy %u -> %u -> %u bytes - in %u hops", (unsigned int)bytes_to_read,(unsigned int) bytes_read, (unsigned int)result, (unsigned int)delayCount);
+                LOGD("StreamCopy::copy %u -> %u -> %u bytes - in %u hops", (unsigned int)bytes_to_read,(unsigned int) bytes_read, (unsigned int)result, (unsigned int)delayCount);
                 #endif
             } else {
                 // give the processor some time 
