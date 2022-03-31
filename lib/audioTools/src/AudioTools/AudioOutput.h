@@ -5,6 +5,7 @@
 #include "AudioTools/Converter.h"
 #include "AudioTools/Buffers.h"
 #include "AudioBasic/Int24.h"
+#include "WiFiClient.h"
 
 #define MAX_SINGLE_CHARS 8
 
@@ -478,31 +479,40 @@ class MultiOutputPrint : public AudioPrint {
         /// Defines a MultiOutput with no final output: Define your outputs with add()
         MultiOutputPrint() = default;
 
+        MultiOutputPrint(std::vector<WiFiClient>* vec) {
+            vector = vec;
+        }
+
         /// Defines a MultiOutput with a single final outputs,
-        MultiOutputPrint(Print &out){
-            vector.push_back(&out);            
-        }
+        // MultiOutputPrint(Print &out){
+        //     vector.push_back(&out);            
+        // }
 
-        /// Defines a MultiOutput with 2 final outputs
-        MultiOutputPrint(Print &out1, Print &out2){
-            vector.push_back(&out1);
-            vector.push_back(&out2);
-        }
+        // /// Defines a MultiOutput with 2 final outputs
+        // MultiOutputPrint(Print &out1, Print &out2){
+        //     vector.push_back(&out1);
+        //     vector.push_back(&out2);
+        // }
 
-        /// Add an additional AudioPrint output
-        void add(Print &out){
-            vector.push_back(&out);
-        }
+        // /// Add an additional AudioPrint output
+        // void add(Print &out){
+        //     vector.push_back(&out);
+        // }
 
-        void remove(Print* out) {
-            Serial.println("test");
-            for(auto obj = vector.begin(); obj != vector.end(); obj++) {
-                Serial.println("test2")
-                if(*obj == out)
-                    vector.erase(obj);
-            }
-        }
+        // void remove(Print* out) {
+        //     Serial.println("test");
+        //     for(auto obj = vector.begin(); obj != vector.end(); obj++) {
+        //         Serial.println("test2");
+        //         if(*obj == out) {
+        //             vector.erase(obj);
+        //             return;
+        //         }
+        //     }
+        // }
 
+        // void clear() {
+        //     vector.clear();
+        // }
         // void flush() {
         //     for (int j=0;j<vector.size();j++){
         //         // vector[j]->flush();
@@ -516,33 +526,38 @@ class MultiOutputPrint : public AudioPrint {
         // }
 
         size_t write(const uint8_t *buffer, size_t size){
-            for (int j=0;j<vector.size();j++){
-                // int open = size;
-                // int start = 0;
-                // while(open>0){
-                //     int written = vector[j]->write(buffer+start, open);
-                //     open -= written;
-                //     start += written;
-                // }
-                if(vector[j]->availableForWrite())
-                vector[j]->write(buffer, size);
+            for (int j=0;j<vector->size();j++){
+                int open = size;
+                int start = 0;
+                // if((*vector)[j].availableForWrite())
+                while(open>0){
+                    int written = (*vector)[j].write(buffer+start, open);
+                    open -= written;
+                    start += written;
+                    if((*vector)[j].getWriteError()!=0 || !(*vector)[j].connected() || !(*vector)[j])
+                        break;
+                }
+                // if(vector[j]->availableForWrite())
+                // (*vector)[j].write(buffer, size);
             }
             return size;
         }
 
         size_t write(uint8_t ch){
-            for (int j=0;j<vector.size();j++){
-                // int open = 1;
-                // while(open>0){
-                //     open -= vector[j]->write(ch);
-                // }
-                vector[j]->write(ch);
+            for (int j=0;j<vector->size();j++){
+                int open = 1;
+                while(open>0){
+                    open -= (*vector)[j].write(ch);
+                    if((*vector)[j].getWriteError()!=0 || !(*vector)[j].connected() || !(*vector)[j])
+                        break;
+                }
+                // (*vector)[j].write(ch);
             }
             return 1;
         }
 
     protected:
-        Vector<Print*> vector;
+        std::vector<WiFiClient>* vector;
 
 };
 
