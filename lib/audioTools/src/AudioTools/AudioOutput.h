@@ -6,6 +6,7 @@
 #include "AudioTools/Buffers.h"
 #include "AudioBasic/Int24.h"
 #include "WiFiClient.h"
+#include "vector"
 
 #define MAX_SINGLE_CHARS 8
 

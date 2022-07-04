@@ -6,7 +6,6 @@
 #include <WiFi.h>
 #include "AudioCodecs/CodecWAV.h"
 #include "AudioTools.h"
-#include "vector"
 
 namespace audio_tools {
 
@@ -17,7 +16,6 @@ typedef void (*AudioServerDataCallback)(Print *out);
  * @brief A simple Arduino Webserver which streams the result 
  * This class is based on the WiFiServer class. All you need to do is to provide the data 
  * with a callback method or from an Arduino Stream:   in -copy> client
-
  * 
  * 
  * @author Phil Schatzmann
@@ -38,10 +36,9 @@ class AudioServer {
          * @param network 
          * @param password 
          */
-        AudioServer(const char* network, const char *password, byte maxClients = 4) {
+        AudioServer(const char* network, const char *password) {
             this->network = (char*)network;
             this->password = (char*)password;
-            // this->server = WiFiServer(80, maxClients);
         }
 
         /**
@@ -59,9 +56,6 @@ class AudioServer {
 
             // start server
             server.begin();
-            
-            if(copier.getTo()==nullptr)
-                copier.begin(outs, in);
         }
 
         /**
@@ -80,8 +74,6 @@ class AudioServer {
 
             // start server
             server.begin();
-
-            //TODO
         }
 
         /**
@@ -102,34 +94,30 @@ class AudioServer {
         bool doLoop() {
             //LOGD("doLoop");
             bool active = true;
-
-            processClient(server.available());
-
-            if(clients.size()>0) {
-                LOGD("copy data...");
-                if (converter_ptr==nullptr) {
-                    copier.copy();
+            if (!client_obj.connected()) {
+                client_obj = server.available(); // listen for incoming clients
+                processClient();
+            } else {
+                // We are connected: copy input from source to wav output
+                if (client_obj){
+                    if (callback==nullptr) {
+                        LOGD("copy data...");
+                        if (converter_ptr==nullptr) {
+                            copier.copy();
+                        }else {
+                            copier.copy<int16_t>(*converter_ptr);
+                        }
+                        // if we limit the size of the WAV the encoder gets automatically closed when all has been sent
+                        if (!client_obj) {
+                            LOGI("stop client...");
+                            client_obj.stop();
+                            active = false;
+                        }
+                    } 
                 } else {
-                    copier.copy<int16_t>(*converter_ptr);
+                    LOGI("client was not connected");
                 }
             }
-
-            // We are connected: copy input from source to wav output
-            for(auto client_obj = clients.begin(); client_obj != clients.end(); client_obj++) {
-                if (callback==nullptr) {
-                    // if we limit the size of the WAV the encoder gets automatically closed when all has been sent
-                    if (!(*client_obj) || !client_obj->connected() || client_obj->getWriteError()!=0) {
-                        LOGI("stop client...");
-                        Serial.println(clients.size());
-                        client_obj->stop();
-                        clients.erase(client_obj);
-                        Serial.println(clients.size());
-                        active = clients.size()>0;
-                        break;
-                    }
-                } 
-            }
-
             return active;
         }
 
@@ -138,27 +126,26 @@ class AudioServer {
             converter_ptr = c;
         }
 
-        Stream& out(byte i) {
-            return clients[i];
+        Stream& out() {
+            return client_obj;
         }
 
-        Stream* out_ptr(byte i) {
-            return &clients[i];
+        Stream* out_ptr() {
+            return &client_obj;
         }
 
     protected:
         // WIFI
         WiFiServer server = WiFiServer(80);
-        std::vector<WiFiClient> clients;
-        MultiOutputPrint outs = MultiOutputPrint(&clients);
+        WiFiClient client_obj;
         char *password = nullptr;
         char *network = nullptr;
 
         // Content
         const char *content_type=nullptr;
         AudioServerDataCallback callback = nullptr;
-        Stream *in = nullptr;
-        StreamCopy copier;      
+        Stream *in = nullptr;                    
+        StreamCopy copier;
         BaseConverter<int16_t> *converter_ptr = nullptr;
 
         void connectWiFi() {
@@ -176,34 +163,35 @@ class AudioServer {
             Serial.println(WiFi.localIP());
         }
 
-        virtual void sendReplyHeader(byte i){
+        virtual void sendReplyHeader(){
              LOGD(LOG_METHOD);
             // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
             // and a content-type so the client knows what's coming, then a blank line:
-            clients[i].println("HTTP/1.1 200 OK");
+            client_obj.println("HTTP/1.1 200 OK");
             if (content_type!=nullptr){
-                clients[i].print("Content-type:");
-                clients[i].println(content_type);
+                client_obj.print("Content-type:");
+                client_obj.println(content_type);
             }
-            clients[i].println();
+            client_obj.println();
 
         }
 
-        virtual void sendReplyContent(byte i) {
+        virtual void sendReplyContent() {
              LOGD(LOG_METHOD);
             if (callback!=nullptr){
                 // provide data via Callback
                 LOGI("sendReply - calling callback");
-                callback(&outs);
-                clients[i].stop();
+                callback(&client_obj);
+                client_obj.stop();
             } else if (in!=nullptr){
                 // provide data for stream
                 LOGI("sendReply - Returning WAV stream...");
+                copier.begin(client_obj, *in);
             }
         }
 
         // Handle an new client connection and return the data
-        void processClient(WiFiClient client_obj) {
+        void processClient() {
             //LOGD("processClient");
             if (client_obj)  { // if you get a client,
                 LOGI("New Client."); // print a message out the serial port
@@ -212,13 +200,12 @@ class AudioServer {
                     if (client_obj.available()) { // if there's bytes to read from the client,
                         char c = client_obj.read(); // read a byte, then
                         if (c == '\n') { // if the byte is a newline character
+
                             // if the current line is blank, you got two newline characters in a row.
-                            
                             // that's the end of the client HTTP request, so send a response:
                             if (currentLine.length() == 0){
-                                clients.push_back(client_obj);
-                                sendReplyHeader(clients.size()-1);
-                                sendReplyContent(clients.size()-1);
+                                sendReplyHeader();
+                                sendReplyContent();
                                 // break out of the while loop:
                                 break;
                             } else { // if you got a newline, then clear currentLine:
@@ -285,8 +272,7 @@ class AudioEncoderServer  : public AudioServer {
             audio_info.channels = channels;
             audio_info.bits_per_sample = bits_per_sample;
             encoder->setAudioInfo(audio_info);
-            encoded_stream.begin(&outs, encoder);
-            copier.begin(encoded_stream, in);
+            encoded_stream.begin(&client_obj, encoder);
             AudioServer::begin(in, encoder->mime());
         }
 
@@ -301,9 +287,9 @@ class AudioEncoderServer  : public AudioServer {
             LOGD(LOG_METHOD);
             this->in = &in;
             this->audio_info = info;
-            encoder->setAudioInfo(audio_info);            
-            encoded_stream.begin(&outs, encoder);
-            copier.begin(encoded_stream, in);
+            encoder->setAudioInfo(audio_info);
+            encoded_stream.begin(&client_obj, encoder);
+
             AudioServer::begin(in, encoder->mime());
         }
 
@@ -320,7 +306,6 @@ class AudioEncoderServer  : public AudioServer {
             audio_info.channels = channels;
             audio_info.bits_per_sample = bits_per_sample;
             encoder->setAudioInfo(audio_info);
-            encoded_stream.begin(&outs, encoder);
 
             AudioServer::begin(cb, encoder->mime());
         }
@@ -338,16 +323,20 @@ class AudioEncoderServer  : public AudioServer {
         AudioBaseInfo audio_info;
         AudioEncoder *encoder = nullptr;
 
-        virtual void sendReplyContent(byte i) {
+
+        virtual void sendReplyContent() {
             LOGD(LOG_METHOD);
             if (callback!=nullptr){
+                encoded_stream.begin(out_ptr(), encoder);
                 // provide data via Callback to encoded_stream
                 LOGI("sendReply - calling callback");
                 callback(&encoded_stream);
-                clients[i].stop();
+                client_obj.stop();
             } else if (in!=nullptr){
                 // provide data for stream: in -copy>  encoded_stream -> out
                 LOGI("sendReply - Returning WAV stream...");
+                encoded_stream.begin(out_ptr(), encoder);
+                copier.begin(encoded_stream, *in);
             }
         }
 
@@ -385,7 +374,7 @@ class AudioWAVServer : public AudioEncoderServer {
             }
         }
 
-                // provides a pointer to the cencoder
+                // provides a pointer to the encoder
         WAVEncoder &wavEncoder(){
             return *static_cast<WAVEncoder*>(encoder);
         }

@@ -228,8 +228,11 @@ class HttpHeader {
             if (in.connected()){
                 if (in.available()==0) {
                     LOGW("Waiting for data...");
+                    unsigned long start = millis();
                     while(in.available()==0){
                         delay(500);
+                        if(millis()-start > 10*1000)
+                            ESP.restart();
                     }
                 }
                 readLine(in, line, MaxHeaderLineLength);

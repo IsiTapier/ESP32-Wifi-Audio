@@ -9,6 +9,8 @@ const char* password = "87934hzft9oeu4389nv8o437893hf978";
 // const char* password = "2016Daheim12";
 // const char* ssid = "ESP32";
 // const char* password = "12345678";
+// const char* ssid = "GodiTechnik";
+// const char* password = "SoundcraftVi400!";
 
 /**
  * @file streams-audiokit-webserver_aac.ino
@@ -38,8 +40,8 @@ void setup(){
   // setup and configure fdk
   fdk = new AACEncoderFDK();  
   fdk->setAudioObjectType(2);  // AAC low complexity
-  fdk->setOutputBufferSize(1024); // decrease output buffer size
-  fdk->setVariableBitrateMode(0); // low variable bitrate
+  fdk->setOutputBufferSize(16*1024); // decrease output buffer size
+  fdk->setVariableBitrateMode(2); // low variable bitrate
   server = new AudioEncoderServer(fdk,ssid,password);  
 
 
@@ -47,10 +49,10 @@ void setup(){
   Serial.println("starting AudioKit...");
   auto config = kit.defaultConfig(RX_MODE);
   config.input_device = AUDIO_HAL_ADC_INPUT_LINE2;
-  config.sample_rate = 22050; 
+  config.sample_rate = 8000; 
   config.bits_per_sample = 16;
-  config.default_actions_active = false; 
-  config.channels = 2; 
+  config.channels = 2;
+  config.default_actions_active = true;
   config.sd_active = false;
   kit.begin(config);
   Serial.println("AudioKit started");
@@ -58,6 +60,7 @@ void setup(){
   // start data sink
   server->begin(kit, config);
   Serial.println("Server started");
+  Serial.println(WiFi.macAddress());
 
 }
 
