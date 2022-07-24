@@ -57,6 +57,9 @@ esp_err_t get_i2s_pins(i2s_port_t port, i2s_pin_config_t *i2s_config)
     i2s_config->ws_io_num = GPIO_NUM_17;
     i2s_config->data_out_num = GPIO_NUM_12;
     i2s_config->data_in_num = GPIO_NUM_46;
+#if ESP_IDF_VERSION_MAJOR >= 4    
+        i2s_config->mck_io_num = GPIO_NUM_0;
+#endif
 
     return ESP_OK;
 }
@@ -89,6 +92,11 @@ esp_err_t i2s_mclk_gpio_select(i2s_port_t i2s_num, gpio_num_t gpio_num)
     gpio_matrix_out(gpio_num, CLK_I2S_MUX_IDX, 0, 0);
 
     return ESP_OK;
+}
+
+int8_t get_headphone_detect_gpio(void)
+{
+    return -1;
 }
 
 // input-output pins

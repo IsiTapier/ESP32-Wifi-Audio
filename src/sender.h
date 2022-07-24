@@ -35,7 +35,7 @@ void setup(){
   AudioLogger::instance().begin(Serial, AudioLogger::Info);  
   // Defining Loglevels for the different libraries
   // LOGLEVEL_FDK = FDKInfo; 
-  LOGLEVEL_AUDIOKIT = AudioKitInfo;
+  LOGLEVEL_AUDIOKIT = AudioKitWarning;
   
   // setup and configure fdk
   fdk = new AACEncoderFDK();  
@@ -61,6 +61,7 @@ void setup(){
   server->begin(kit, config);
   Serial.println("Server started");
   Serial.println(WiFi.macAddress());
+  Serial.println(WiFi.localIP());
 
 }
 

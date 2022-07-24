@@ -84,7 +84,7 @@ void loop(){
   copier.copy();
   if(url.available())
     lastAvailable = millis();
-  if(millis()-lastAvailable > 10*1000)
+  if(millis()-lastAvailable > 1*1000)
     ESP.restart();
   // pit.processActiolayer.copy();
   // kns();

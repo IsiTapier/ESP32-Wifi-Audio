@@ -24,12 +24,14 @@
 #include "SPI.h"
 
 #ifdef ESP32
-#include "esp_a2dp_api.h"
+//#include "esp_a2dp_api.h"
 #include "audio_hal/audio_system.h"
 #include "audio_hal/audio_version.h"
 #include "driver/i2s.h"
 #include "audio_hal/audio_type_def.h"
-
+#if !defined(ARDUINO_ESP32S3_DEV) && !defined(ARDUINO_ESP32S2_DEV)  && !defined(ARDUINO_ESP32C3_DEV)
+SPIClass SPI_VSPI(VSPI);
+#endif
 #endif
 
 // Support for old IDF versions
@@ -50,13 +52,18 @@ typedef uint32_t eps32_i2s_audio_sample_rate_type;
 class AudioKit;
 class AudioKit* selfAudioKit = nullptr;
 
+
 /**
  * @brief Configuation for AudioKit
  *
  */
 struct AudioKitConfig {
   i2s_port_t i2s_num = (i2s_port_t)0;
-  gpio_num_t mclk_gpio = (gpio_num_t)0;
+#if ESP_IDF_VERSION_MAJOR < 4                  
+  int mclk_gpio = 0; // default value
+#else
+  int mclk_gpio = -1; // take definition from board_pins_config.c
+#endif
   bool sd_active = true;
   bool auto_clear = true;
   bool use_apll = true; 
@@ -95,17 +102,17 @@ struct AudioKitConfig {
       case AUDIO_HAL_08K_SAMPLES: /*!< set to  8k samples per second */
         return 8000;
       case AUDIO_HAL_11K_SAMPLES: /*!< set to 11.025k samples per second */
-        return 11000;
+        return 11025;
       case AUDIO_HAL_16K_SAMPLES: /*!< set to 16k samples in per second */
         return 16000;
       case AUDIO_HAL_22K_SAMPLES: /*!< set to 22.050k samples per second */
-        return 22000;
+        return 22050;
       case AUDIO_HAL_24K_SAMPLES: /*!< set to 24k samples in per second */
         return 24000;
       case AUDIO_HAL_32K_SAMPLES: /*!< set to 32k samples in per second */
         return 32000;
       case AUDIO_HAL_44K_SAMPLES: /*!< set to 44.1k samples per second */
-        return 44000;
+        return 44100;
       case AUDIO_HAL_48K_SAMPLES: /*!< set to 48k samples per second */
         return 48000;
     }
@@ -136,9 +143,12 @@ struct AudioKitConfig {
   i2s_pin_config_t i2sPins() {
     i2s_pin_config_t result;
     get_i2s_pins(i2s_num, &result);
- #if ESP_IDF_VERSION_MAJOR >= 4    
-     result.mck_io_num = I2S_PIN_NO_CHANGE; //mclk_gpio;
- #endif
+#if ESP_IDF_VERSION_MAJOR >= 4                  
+    // overwrite mclk from board def if necessary
+     if (mclk_gpio>=0){
+      result.mck_io_num = (gpio_num_t)mclk_gpio; //mclk_gpio;
+     }
+#endif
     return result;
   }
 
@@ -159,6 +169,9 @@ struct AudioKitConfig {
       int mode = isMaster() ? I2S_MODE_SLAVE : I2S_MODE_MASTER;
       // using ESP32 dac/adc
       if (fmt == AUDIO_HAL_I2S_DSP){
+        #if AUDIOKIT_BOARD==4 || defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_ESP32S2_DEV)|| defined(ARDUINO_ESP32C3_DEV)
+          KIT_LOGE("AUDIO_HAL_I2S_DSP not supported");
+        #else
         if (codec_mode == AUDIO_HAL_CODEC_MODE_DECODE) {
           mode = mode | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN;
         } else if (codec_mode == AUDIO_HAL_CODEC_MODE_ENCODE) {
@@ -166,6 +179,7 @@ struct AudioKitConfig {
         } else if (codec_mode == AUDIO_HAL_CODEC_MODE_BOTH) {
           mode = mode | I2S_MODE_RX | I2S_MODE_TX | I2S_MODE_ADC_BUILT_IN | I2S_MODE_DAC_BUILT_IN;
         } 
+        #endif
       } else {
         // I2S
         if (codec_mode == AUDIO_HAL_CODEC_MODE_DECODE) {
@@ -200,7 +214,9 @@ class AudioKit {
     // setup SPI for SD drives
     selfAudioKit = this;
     // added to constructor so that SPI is setup as part of global variable setup
+#ifdef ESP32
     setupSPI();
+#endif
   }
 
   /// Provides the default configuration for input or output
@@ -209,10 +225,13 @@ class AudioKit {
     switch(inout){
       case AudioOutput:
         result.codec_mode = AUDIO_HAL_CODEC_MODE_DECODE; // dac
+        break;
       case AudioInput:
         result.codec_mode =  AUDIO_HAL_CODEC_MODE_ENCODE; // adc
+        break;
       default:
         result.codec_mode =  AUDIO_HAL_CODEC_MODE_BOTH;
+        break;
     }
     return result;
   }
@@ -223,9 +242,17 @@ class AudioKit {
     cfg = cnfg;
     KIT_LOGI("Selected board: %d", AUDIOKIT_BOARD);
 
-    // setup SPI for SD card
-    setupSPI();
+    // if already active we stop first
+    if (is_active){
+      end();
+    }
 
+#ifdef ESP32
+    // release SPI for SD card if it is not necessary
+    if (AUDIOKIT_SETUP_SD && !cfg.sd_active){
+      p_spi->end();
+    }
+#endif
     // setup headphone if necessary
     setupHeadphoneDetection();
 
@@ -264,12 +291,12 @@ class AudioKit {
       return false;
     }
 
-//#if ESP_IDF_VERSION_MAJOR < 4                  
-    if (i2s_mclk_gpio_select(cfg.i2s_num, cfg.mclk_gpio) != ESP_OK) {
+#if ESP_IDF_VERSION_MAJOR < 4                  
+    if (i2s_mclk_gpio_select(cfg.i2s_num,(gpio_num_t)cfg.mclk_gpio) != ESP_OK) {
       KIT_LOGE("i2s_mclk_gpio_select");
       return false;
     }
-//#endif
+#endif
 
 #endif
 
@@ -279,6 +306,7 @@ class AudioKit {
       return false;
     }
 
+    is_active = true;
     return true;
   }
 
@@ -294,6 +322,9 @@ class AudioKit {
     audio_hal_ctrl_codec(hal_handle, cfg.codec_mode, AUDIO_HAL_CTRL_STOP);
     // deinit
     audio_hal_deinit(hal_handle);
+
+    is_active = false;
+    hal_handle = 0;
     return true;
   }
 
@@ -310,12 +341,12 @@ class AudioKit {
     return audio_hal_set_mute(hal_handle, mute) == ESP_OK;
   }
 
-  /// Defines the Volume
+  /// Defines the Volume (in %) if volume is 0, mute is enabled,range is 0-100.
   bool setVolume(int vol) {
     return (vol > 0) ? audio_hal_set_volume(hal_handle, vol) == ESP_OK : false;
   }
 
-  /// Determines the volume
+  /// Determines the volume %
   int volume() {
     int volume;
     if (audio_hal_get_volume(hal_handle, &volume) != ESP_OK) {
@@ -351,6 +382,33 @@ class AudioKit {
   }
 
 #endif
+
+
+  /// Just update the sample rate
+  bool setSampleRate(audio_hal_iface_samples_t sample_rate){
+    bool result = true;
+    // update values
+    audio_hal_conf.i2s_iface.samples = cfg.sample_rate = sample_rate;
+
+    // apply new value
+    if (is_active){
+      // esp_err_t audio_hal_codec_iface_config(audio_hal_handle_t audio_hal, audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface)
+      if (audio_hal_codec_iface_config(hal_handle, audio_hal_conf.codec_mode, &audio_hal_conf.i2s_iface) != ESP_OK) {
+        KIT_LOGE("audio_hal_ctrl_codec");
+        result = false;
+      }
+#ifdef ESP32
+      // update I2S
+      if (i2s_set_sample_rates(cfg.i2s_num, cfg.sampleRate()) != ESP_OK)  {
+        KIT_LOGE("i2s_set_sample_rates");
+        result = false;
+      }
+#endif
+    }
+
+    return result;
+  }
+
 
   /**
    * @brief  Get the gpio number for auxin detection
@@ -534,6 +592,7 @@ class AudioKit {
   }
 
  protected:
+  bool is_active = false;
   AudioKitConfig cfg;
   audio_hal_codec_config_t audio_hal_conf;
   audio_hal_handle_t hal_handle = 0;
@@ -542,8 +601,9 @@ class AudioKit {
   bool headphoneIsConnected = false;
   unsigned long speakerChangeTimeout = 0;
   int8_t headphonePin = -1;
-  bool setup_sd_spi = true;
-
+#ifdef ESP32
+  SPIClass *p_spi = &AUDIOKIT_SD_SPI;
+#endif
   /**
    * @brief Setup the headphone detection
    */
@@ -563,27 +623,25 @@ class AudioKit {
     }
   }
 
+#if defined(ESP32) 
   /**
    * @brief Setup the SPI so that we can access the SD Drive
    */
   void setupSPI() {
 //  I assume this is valid for all AudioKits!
 #if AUDIOKIT_SETUP_SD==1
-    if (cfg.sd_active && setup_sd_spi){
       KIT_LOGI(LOG_METHOD);
       spi_cs_pin = PIN_AUDIO_KIT_SD_CARD_CS;
       pinMode(spi_cs_pin, OUTPUT);
       digitalWrite(spi_cs_pin, HIGH);
 
-      SPI.begin(PIN_AUDIO_KIT_SD_CARD_CLK, PIN_AUDIO_KIT_SD_CARD_MISO, PIN_AUDIO_KIT_SD_CARD_MOSI, PIN_AUDIO_KIT_SD_CARD_CS);
-      setup_sd_spi = false;
-    }
+      p_spi->begin(PIN_AUDIO_KIT_SD_CARD_CLK, PIN_AUDIO_KIT_SD_CARD_MISO, PIN_AUDIO_KIT_SD_CARD_MOSI, PIN_AUDIO_KIT_SD_CARD_CS);    
 #else
     #warning "SPI initialization for the SD drive not supported - you might need to take care of this yourself" 
     cfg.sd_active = false;
 #endif
   }
-
+#endif
 
 
 };

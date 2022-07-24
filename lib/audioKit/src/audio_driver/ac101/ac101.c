@@ -1,4 +1,5 @@
 // code from https://github.com/donny681/esp-adf/blob/master/components/audio_driver/AC101/AC101.c
+// documentation see https://usermanual.wiki/Document/xpowers20AC10120User20Manual20v11.447217432/html#pf25
 
 #include "audio_hal/audiokit_board.h"
 #include <string.h>
@@ -6,6 +7,11 @@
 #include "ac101.h"
 #include "audio_hal/board_pins_config.h"
 #include "audio_hal/audiokit_logger.h"
+
+#ifndef ESP32
+#define GPIO_PIN_INTR_DISABLE 0
+#endif
+
 
 static i2c_config_t ac_i2c_cfg = {
 	.mode = I2C_MODE_MASTER,
@@ -123,6 +129,31 @@ void set_codec_clk(audio_hal_iface_samples_t sampledata)
 	ac101_write_reg(I2S_SR_CTRL, sample_fre);
 }
 
+/// Determines the value for the SRC register based on the selected adc_input
+uint16_t get_src_value(audio_hal_adc_input_t adc_input){
+	uint16_t src_value = 0;
+	switch(adc_input){
+		// microphone
+		case AUDIO_HAL_ADC_INPUT_LINE1:
+			src_value = 0x2020;
+			break;
+		// linein
+		case AUDIO_HAL_ADC_INPUT_LINE2:
+			src_value = 0x0408;
+			break;
+		// right mic in & left line in
+		case AUDIO_HAL_ADC_INPUT_LINE3:
+			src_value = 0x0420;
+			break;
+		// both
+		case AUDIO_HAL_ADC_INPUT_ALL:
+		default:
+			src_value = 0x0408 | 0x2020;
+			break;
+	}
+	return src_value;
+}
+
 esp_err_t ac101_init(audio_hal_codec_config_t *codec_cfg)
 {
 	esp_err_t res = ESP_OK;
@@ -136,10 +167,8 @@ esp_err_t ac101_init(audio_hal_codec_config_t *codec_cfg)
 	{
 		KIT_LOGE("reset failed!");
 		return res;
-	}
-	else
-	{
-		KIT_LOGW("reset succeed");
+	} else {
+		KIT_LOGI("reset");
 	}
 	res |= ac101_write_reg(SPKOUT_CTRL, 0xe880);
 
@@ -160,7 +189,8 @@ esp_err_t ac101_init(audio_hal_codec_config_t *codec_cfg)
 	res |= ac101_write_reg(I2S1_MXR_SRC, 0x2200); //
 
 	res |= ac101_write_reg(ADC_SRCBST_CTRL, 0xccc4);
-	res |= ac101_write_reg(ADC_SRC, 0x2020);
+
+	res |= ac101_write_reg(ADC_SRC, get_src_value(codec_cfg->adc_input));
 	res |= ac101_write_reg(ADC_DIG_CTRL, 0x8000);
 	res |= ac101_write_reg(ADC_APC_CTRL, 0xbbc3);
 

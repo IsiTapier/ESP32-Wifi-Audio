@@ -14,7 +14,7 @@ So with this project it should now get quite easy to use these boards also in Ar
 
 ## Configuration
 
-You can define your board and the default settings in the ```AudioKitSettings.h``` file. 
+You must define your board and the default settings in the ```libraries/arduino-audiokit/src/AudioKitSettings.h``` file. Please note that the functionlity will __not work__ properly if this is done in the Sketch. 
 
 ```
  * @brief AUDIOKIT_BOARD selects a specic board:
@@ -22,10 +22,10 @@ You can define your board and the default settings in the ```AudioKitSettings.h`
  * 2) lyrat_v4_2 - DRAFT Not Tested
  * 3) lyrat_mini_v1_1 - DRAFT Not Tested
  * 4) esp32_s2_kaluga_1_v1_2 - DRAFT Not Tested
- * 5) ai_thinker (ES8388) 3478
- * 6) ai_thinker (AC101) 2762
+ * 5) ai_thinker (ES8388) 2957 3478 A149
+ * 6) ai_thinker (AC101) 2762 2957
  * 7) ai_thinker (ES8388) 2957
- * 8) generic_es8388
+ * 10) generic_es8388
  */
 
 #define AUDIOKIT_BOARD 1
@@ -33,7 +33,7 @@ You can define your board and the default settings in the ```AudioKitSettings.h`
 ```
 Here the lyrat v3.4 has been selected. 
 
-Unfortunately AI Thinker created a big mess with their boards using different Audio chips and pin assingments all of them using the same version number. You might need to make and educated guess by looking at the number after the version. 
+Unfortunately AI Thinker created a big mess with their boards using different Audio chips and pin assingments, all of them using the same version number. You might need to make an educated guess by looking at the number after the version and if you have a 2957 board, you need to check all 3 options!
 
 
 ## Example Sketch

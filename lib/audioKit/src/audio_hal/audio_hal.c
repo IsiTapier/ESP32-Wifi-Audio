@@ -50,21 +50,23 @@ audio_hal_handle_t audio_hal_init(audio_hal_codec_config_t *audio_hal_conf, audi
     memcpy(audio_hal, audio_hal_func, sizeof(audio_hal_func_t));
     audio_hal->audio_hal_lock = mutex_create();
 
+#if AUDIOKIT_MUTEX_SUPPORT==1
     AUDIO_MEM_CHECK(TAG_HAL, audio_hal->audio_hal_lock, {
         KIT_LOGE("AUDIO_MEM_CHECK");
         audio_free(audio_hal);
         return NULL;
     });
-
+#endif
     mutex_lock(audio_hal->audio_hal_lock);
 
     ret  = audio_hal->audio_codec_initialize(audio_hal_conf);
     KIT_LOGD("audio_codec_initialize -> %d", ret);
     if (ret == ESP_FAIL) {
-        audio_free(audio_hal);
+        mutex_unlock(audio_hal->audio_hal_lock);
         if (audio_hal_func->handle) {
             return audio_hal_func->handle;
         } else {
+            audio_free(audio_hal);
             KIT_LOGE( "codec init failed!");
             return NULL;
         }
@@ -73,7 +75,6 @@ audio_hal_handle_t audio_hal_init(audio_hal_codec_config_t *audio_hal_conf, audi
     }
 
     ret |= audio_hal->audio_codec_config_iface(audio_hal_conf->codec_mode, &audio_hal_conf->i2s_iface);
-
     ret |= audio_hal->audio_codec_set_volume(AUDIO_HAL_VOL_DEFAULT);
     audio_hal->handle = audio_hal;
     audio_hal_func->handle = audio_hal;
@@ -101,8 +102,8 @@ esp_err_t audio_hal_ctrl_codec(audio_hal_handle_t audio_hal, audio_hal_codec_mod
     KIT_LOGD(LOG_METHOD);
     esp_err_t ret;
     AUDIO_HAL_CHECK_NULL(audio_hal, "audio_hal handle is null", -1);
-    mutex_lock(audio_hal->audio_hal_lock);
     KIT_LOGI( "Codec mode is %d, Ctrl:%d", mode, audio_hal_state);
+    mutex_lock(audio_hal->audio_hal_lock);
     ret = audio_hal->audio_codec_ctrl(mode, audio_hal_state);
     mutex_unlock(audio_hal->audio_hal_lock);
     return ret;
