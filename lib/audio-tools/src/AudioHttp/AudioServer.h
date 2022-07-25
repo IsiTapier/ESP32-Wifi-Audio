@@ -234,7 +234,6 @@ class AudioServer {
                             if (currentLine.length() == 0){
                                 // client_obj.setNoDelay(true);
                                 // client_obj.setTimeout(1);
-                                client_obj.setTimeout(1);
                                 clients.push_back(client_obj);
                                 sendReplyHeader(clients.size()-1);
                                 sendReplyContent(clients.size()-1);

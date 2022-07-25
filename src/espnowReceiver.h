@@ -7,6 +7,7 @@
  * 
  * @copyright Copyright (c) 2022
  */
+#define USE_HELIX 
 
 #include "AudioTools.h"
 #include "AudioLibs/Communication.h"
@@ -14,10 +15,11 @@
 #include "AudioLibs/AudioKit.h"
 #include "Selections.h"
 
+
 ESPNowStream now;
 AudioKitStream kit;
-EncodedAudioStream decoder(&kit, new SBCDecoder(256)); // decode and write to I2S - ESP Now is limited to 256 bytes
-StreamCopy copier(decoder, now);     
+EncodedAudioStream decoder(&kit, new AACDecoderHelix()); // decode and write to I2S - ESP Now is limited to 256 bytes
+StreamCopy copier(decoder, now); 
 const char *peers[] = {MAC_SENDER};
 
 void setup() {
@@ -37,7 +39,7 @@ void setup() {
   config.sample_rate = 32000; 
   config.bits_per_sample = 16;
   config.channels = 2;
-  config.default_actions_active = false;
+  config.default_actions_active = true;
   config.sd_active = false;
   kit.begin(config);
   Serial.println("AudioKit started");

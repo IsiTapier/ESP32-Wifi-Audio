@@ -1,5 +1,5 @@
-#define SENDER
-#define ESPNOW 
+// #define SENDER
+// #define ESPNOW 
 
 #define MAC MAC_SENDER
 #define MAC_SENDER      "A8:48:FA:0B:93:02"
